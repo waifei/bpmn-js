@@ -11,17 +11,20 @@ var bpmnCopyPasteModule = require('../../../../lib/features/copy-paste'),
     coreModule = require('../../../../lib/core');
 
 var map = require('lodash/collection/map'),
+    filter = require('lodash/collection/filter'),
     forEach = require('lodash/collection/forEach'),
     uniq = require('lodash/array/uniq');
 
 var DescriptorTree = require('./DescriptorTree');
 
+var is = require('../../../../lib/util/ModelUtil').is;
 
 describe('features/copy-paste', function() {
 
   var testModules = [ bpmnCopyPasteModule, copyPasteModule, tooltipsModule, modelingModule, coreModule ];
 
   var basicXML = require('../../../fixtures/bpmn/features/copy-paste/basic.bpmn'),
+      clonePropertiesXML = require('../../../fixtures/bpmn/features/replace/clone-properties.bpmn'),
       propertiesXML = require('../../../fixtures/bpmn/features/copy-paste/properties.bpmn'),
       collaborationXML = require('../../../fixtures/bpmn/features/copy-paste/collaboration.bpmn'),
       collaborationMultipleXML = require('../../../fixtures/bpmn/features/copy-paste/collaboration-multiple.bpmn'),
@@ -33,7 +36,7 @@ describe('features/copy-paste', function() {
     beforeEach(bootstrapModeler(basicXML, { modules: testModules }));
 
 
-    describe('copy', function() {
+    describe.skip('copy', function() {
 
       it('selected elements', inject(function(elementRegistry, copyPaste) {
 
@@ -509,6 +512,86 @@ describe('features/copy-paste', function() {
 
 
     it('participant with InputDataAssociation', inject(integrationTest([ 'Participant_Input' ])));
+
+  });
+
+  describe('deep properties', function() {
+
+    var camundaPackage = require('../../../fixtures/json/model/camunda');
+
+    beforeEach(bootstrapModeler(clonePropertiesXML, {
+      modules: testModules,
+      moddleExtensions: {
+        camunda: camundaPackage
+      }
+    }));
+
+    it('integration', inject(integrationTest([ 'Participant_0x9lnke' ])));
+
+    it('should copy UserTask properties', inject(function(elementRegistry, copyPaste, canvas) {
+      var participant = elementRegistry.get('Participant_0x9lnke'),
+          task = elementRegistry.get('Task_1'),
+          newTask;
+
+      // when
+      copyPaste.copy([ task ]);
+
+      copyPaste.paste({
+        element: participant,
+        point: {
+          x: 500,
+          y: 50
+        }
+      });
+
+      newTask = filter(participant.children, function(element) {
+        return is(element, 'bpmn:Task');
+      })[0];
+
+      // then
+      var businessObject = newTask.businessObject;
+
+      expect(businessObject.asyncBefore).to.be.true;
+      expect(businessObject.jobPriority).to.equal('100');
+      expect(businessObject.documentation[0].text).to.equal('hello world');
+
+      var extensionElements = businessObject.extensionElements.values;
+
+      expect(extensionElements).to.have.length(5);
+
+      expect(is(extensionElements[0], 'camunda:InputOutput')).to.be.true;
+
+      expect(is(extensionElements[0].inputParameters[0], 'camunda:InputParameter')).to.be.true;
+
+      expect(extensionElements[0].inputParameters[0].name).to.equal('Input_1');
+      expect(extensionElements[0].inputParameters[0].value).to.equal('foo');
+
+      expect(is(extensionElements[0].outputParameters[0], 'camunda:OutputParameter')).to.be.true;
+
+      expect(extensionElements[0].outputParameters[0].name).to.equal('Output_1');
+      expect(extensionElements[0].outputParameters[0].value).to.equal('bar');
+
+      expect(is(extensionElements[1], 'camunda:Properties')).to.be.true;
+
+      expect(is(extensionElements[1].values[0], 'camunda:Property')).to.be.true;
+
+      expect(extensionElements[1].values[0].name).to.equal('bar');
+      expect(extensionElements[1].values[0].value).to.equal('foo');
+
+      expect(is(extensionElements[2], 'camunda:ExecutionListener')).to.be.true;
+
+      expect(extensionElements[2].class).to.equal('reallyClassy');
+      expect(extensionElements[2].event).to.equal('start');
+
+      expect(is(extensionElements[3], 'camunda:FailedJobRetryTimeCycle')).to.be.true;
+
+      expect(extensionElements[3].body).to.equal('10');
+
+      expect(is(extensionElements[4], 'camunda:TaskListener')).to.be.true;
+
+      expect(extensionElements[4].class).to.equal('foobar');
+      expect(extensionElements[4].event).to.equal('create');
+    }));
 
   });
 
